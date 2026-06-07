@@ -7,6 +7,13 @@ interface DBMessage {
   text: string;
 }
 
+export async function ensureConversation(conversationId: string) {
+  await pool.execute(
+    'INSERT IGNORE INTO conversations (id) VALUES (?)',
+    [conversationId]
+  );
+}
+
 export async function createConversation(): Promise<string> {
   const newId = uuidv4();
   await pool.execute(

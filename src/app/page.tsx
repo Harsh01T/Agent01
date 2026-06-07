@@ -6,7 +6,7 @@ import { Role } from '@/types/chat';
 
 interface UIMessage {
   id: string;
-  sender: Role;
+  sender: Role | 'ai'; // 'ai' used in your mapping
   text: string;
   timestamp: Date;
 }
@@ -16,6 +16,7 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -28,6 +29,46 @@ export default function ChatPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading]);
+
+  // Load History on Mount
+  useEffect(() => {
+    async function loadHistory() {
+      let savedId = localStorage.getItem('vendor_chat_session');
+      
+      if (!savedId) {
+        savedId = crypto.randomUUID();
+        localStorage.setItem('vendor_chat_session', savedId);
+        setSessionId(savedId);
+        setIsLoadingHistory(false);
+        return;
+      }
+
+      setSessionId(savedId);
+
+      try {
+        const response = await fetch(`/api/chat/history?conversationId=${savedId}`);
+        if (response.ok) {
+          const data = await response.json();
+          
+          // Map the database format to your UIMessage format
+          const formattedHistory = data.messages.map((msg: any) => ({
+            id: crypto.randomUUID(),
+            sender: msg.sender === 'user' ? 'user' : 'ai',
+            text: msg.text,
+            timestamp: new Date(msg.timestamp || Date.now())
+          }));
+          
+          setMessages(formattedHistory);
+        }
+      } catch (error) {
+        console.error("Failed to restore history", error);
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    }
+
+    loadHistory();
+  }, []);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,7 +100,7 @@ export default function ChatPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: trimmedMessage,
-          sessionId: sessionId || undefined, // Send sessionId if it exists
+          sessionId: sessionId || undefined, // Sends the persistent session ID
         }),
       });
 
@@ -69,16 +110,11 @@ export default function ChatPage() {
         throw new Error(data.error || 'Failed to receive a response from the support server.');
       }
 
-      // Track the session token across subsequent requests
-      if (data.sessionId && !sessionId) {
-        setSessionId(data.sessionId);
-      }
-
       // Append AI response to the UI state
       const aiMessage: UIMessage = {
         id: crypto.randomUUID(),
         sender: 'ai',
-        text: data.reply,
+        text: data.reply || data.text, // Handle whatever your API returns
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, aiMessage]);
@@ -116,7 +152,16 @@ export default function ChatPage() {
 
         {/* Conversation Feed */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/50">
-          {messages.length === 0 && (
+          
+          {/* Show a quick loading state while fetching DB history */}
+          {isLoadingHistory && (
+            <div className="flex flex-col items-center justify-center h-full text-center space-y-3">
+              <Loader2 size={32} className="animate-spin text-slate-400" />
+              <p className="text-sm font-medium text-slate-500">Loading conversation history...</p>
+            </div>
+          )}
+
+          {!isLoadingHistory && messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center p-8 space-y-3">
               <div className="p-4 bg-white border border-slate-200 rounded-full text-slate-400 shadow-sm">
                 <Bot size={32} />
@@ -131,7 +176,7 @@ export default function ChatPage() {
           )}
 
           {/* Render Active Message Threads */}
-          {messages.map((msg) => {
+          {!isLoadingHistory && messages.map((msg) => {
             const isAI = msg.sender === 'ai';
             return (
               <div key={msg.id} className={`flex w-full items-start gap-3 ${isAI ? 'justify-start' : 'justify-end'}`}>
@@ -189,13 +234,13 @@ export default function ChatPage() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              disabled={isLoading}
+              disabled={isLoading || isLoadingHistory}
               placeholder="Ask about shipping, hours, or returns..."
               className="flex-1 px-4 py-2.5 border border-slate-300 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition disabled:bg-slate-100 disabled:text-slate-400"
             />
             <button
               type="submit"
-              disabled={!input.trim() || isLoading}
+              disabled={!input.trim() || isLoading || isLoadingHistory}
               className="px-4 py-2.5 bg-slate-900 text-white border border-slate-900 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition hover:bg-slate-800 cursor:pointer active:scale-95 disabled:bg-slate-100 disabled:border-slate-200 disabled:text-slate-400 disabled:scale-100"
             >
               <Send size={16} />

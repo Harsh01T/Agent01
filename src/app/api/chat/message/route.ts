@@ -1,7 +1,7 @@
 // src/app/api/chat/message/route.ts
 import { NextResponse } from 'next/server';
 import { ChatRequestSchema } from '@/lib/validations';
-import { createConversation, getConversationHistory, saveMessage } from '@/services/dbService';
+import { createConversation, getConversationHistory, saveMessage, ensureConversation } from '@/services/dbService';
 import { generateReply } from '@/services/llm';
 
 export async function POST(request: Request) {
@@ -19,6 +19,8 @@ export async function POST(request: Request) {
 
     if (!currentSessionId) {
       currentSessionId = await createConversation();
+    }else {
+      await ensureConversation(currentSessionId);
     }
 
     const conversationHistory = await getConversationHistory(currentSessionId);
