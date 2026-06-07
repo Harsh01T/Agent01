@@ -33,14 +33,36 @@ export default function ChatPage() {
   // Load History on Mount
   useEffect(() => {
     async function loadHistory() {
-      let savedId = localStorage.getItem('vendor_chat_session');
-      
+      const SESSION_DURATION = 12 * 60 * 60 * 1000; 
+
+      let sessionData = localStorage.getItem('vendor_chat_session');
+      let savedId = null;
+
+      if (sessionData) {
+        try {
+          const parsedData = JSON.parse(sessionData);
+          const now = new Date().getTime();
+
+          if (now - parsedData.timestamp < SESSION_DURATION) {
+            savedId = parsedData.id; 
+          } else {
+            localStorage.removeItem('vendor_chat_session');
+          }
+        } catch (e) {
+          localStorage.removeItem('vendor_chat_session');
+        }
+      }
+
       if (!savedId) {
         savedId = crypto.randomUUID();
-        localStorage.setItem('vendor_chat_session', savedId);
+        localStorage.setItem('vendor_chat_session', JSON.stringify({
+          id: savedId,
+          timestamp: new Date().getTime()
+        }));
+        
         setSessionId(savedId);
         setIsLoadingHistory(false);
-        return;
+        return; 
       }
 
       setSessionId(savedId);
@@ -50,7 +72,6 @@ export default function ChatPage() {
         if (response.ok) {
           const data = await response.json();
           
-          // Map the database format to your UIMessage format
           const formattedHistory = data.messages.map((msg: any) => ({
             id: crypto.randomUUID(),
             sender: msg.sender === 'user' ? 'user' : 'ai',
